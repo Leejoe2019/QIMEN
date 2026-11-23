@@ -10,6 +10,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+ "path/filepath"
+ "strings"
 	"syscall"
 	"time"
 
@@ -61,10 +63,28 @@ func loadConfig(path string) (config, error) {
 	}
 	return cfg, nil
 }
+func migrateLegacy(path,dir string) error {
+ if path==""||dir=="" {return errors.New("--config and --migrate-legacy required")}
+ read:=func(n string)(string,error){b,e:=os.ReadFile(filepath.Join(dir,n));return string(b),e}
+ token,e:=read("token");if e!=nil{return e}
+ cert,e:=read("server.crt");if e!=nil{return e}
+ cfg:=config{Listen:"127.0.0.1:1080",HTTPListen:"127.0.0.1:1081",Servers:[]string{"107.173.181.158:18443"},Token:strings.TrimSpace(token),TLSCAPEM:cert,DialTimeout:"12s",ProbeInterval:"30s",AsymUDPAddress:"107.173.181.158:18443"}
+ if cfg.Token==""{return errors.New("empty token")}
+ if ok:=x509.NewCertPool().AppendCertsFromPEM([]byte(cert));!ok{return errors.New("invalid CA")}
+ b,e:=json.MarshalIndent(cfg,"","  ");if e!=nil{return e}
+ if _,e=os.Stat(path);e==nil{return errors.New("config exists; refusing overwrite")}
+ f,e:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600);if e!=nil{return e}
+ defer f.Close()
+ if _,e=f.Write(append(b,'\n'));e!=nil{return e}
+ return f.Sync()
+}
+
 func main() {
 	path := flag.String("config", "", "path to single JSON config file")
+ legacy := flag.String("migrate-legacy", "", "one-time on-device migration of legacy credentials; does not start client")
 	asymProbe := flag.Bool("asym-probe", false, "probe UDP uplink and TCP downlink without relaying data")
 	flag.Parse()
+ if *legacy!="" {if err:=migrateLegacy(*path,*legacy);err!=nil{log.Fatal(err)};log.Println("private config migrated");return}
 	cfg, err := loadConfig(*path)
 	if err != nil {
 		log.Fatal(err)

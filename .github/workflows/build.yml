@@ -63,3 +63,27 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    name: Publish public CI binaries
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qimen-*
+          merge-multiple: true
+          path: dist
+      - name: Create run-specific public prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="ci-${{ github.run_number }}"
+          sha256sum dist/qimen-* > dist/SHA256SUMS
+          gh release create "$tag" dist/qimen-* dist/SHA256SUMS \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "QIMEN CI build ${{ github.run_number }}" --notes "Automated tested binaries. Do not deploy without verifying SHA256SUMS." --prerelease

@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+ "path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -73,9 +74,28 @@ func loadConfig(path string) (config, error) {
 	return c, nil
 }
 
+func migrateLegacy(path, dir string) error {
+  if path=="" || dir=="" {return fmt.Errorf("--config and --migrate-legacy are required")}
+  read := func(name string) (string,error) { b,e:=os.ReadFile(filepath.Join(dir,name));return string(b),e }
+  token,e:=read("token");if e!=nil{return e}
+  cert,e:=read("server.crt");if e!=nil{return e}
+  key,e:=read("server.key");if e!=nil{return e}
+  cfg:=config{Listen:"0.0.0.0:18443", UDPListen:"0.0.0.0:18443",Token:strings.TrimSpace(token),TLSCertificatePEM:cert,TLSPrivateKeyPEM:key,DialTimeout:"12s"}
+  if _,e=tls.X509KeyPair([]byte(cert),[]byte(key));e!=nil{return fmt.Errorf("invalid local TLS pair: %w",e)}
+  if cfg.Token==""{return fmt.Errorf("empty local token")}
+  b,e:=json.MarshalIndent(cfg,"","  ");if e!=nil{return e}
+  if _,e=os.Stat(path);e==nil{return fmt.Errorf("config exists, refusing overwrite")}
+  f,e:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600);if e!=nil{return e}
+  defer f.Close()
+  if _,e=f.Write(append(b,'\n'));e!=nil{return e}
+  return f.Sync()
+}
+
 func main() {
 	configFile := flag.String("config", "", "path to the single JSON configuration file")
+ legacy := flag.String("migrate-legacy", "", "one-time on-device migration of legacy credentials; does not start server")
 	flag.Parse()
+ if *legacy!="" {if err:=migrateLegacy(*configFile,*legacy);err!=nil{log.Fatal(err)};log.Println("private config migrated");return}
 	c, err := loadConfig(*configFile)
 	if err != nil {
 		log.Fatal(err)
