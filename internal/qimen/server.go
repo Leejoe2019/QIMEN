@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,12 +16,13 @@ import (
 )
 
 type Server struct {
-	Listen      string
-	UDPListen   string
-	TLSConfig   *tls.Config
-	Token       string
-	DialTimeout time.Duration
-	Logger      *log.Logger
+	Listen       string
+	UDPListen    string
+	TLSConfig    *tls.Config
+	Token        string
+	DialTimeout  time.Duration
+	Logger       *log.Logger
+	asymSessions sync.Map
 }
 
 func (s *Server) logger() *log.Logger {
@@ -88,6 +90,26 @@ func (s *Server) ServeConn(conn net.Conn) {
 		_ = WriteMessage(conn, Message{Error: "authentication failed"})
 		return
 	}
+	if msg.Type == "asym" {
+		nonce, e := hex.DecodeString(msg.Target)
+		if e != nil || len(nonce) != 8 {
+			_ = WriteMessage(conn, Message{Error: "invalid nonce"})
+			return
+		}
+		ch := make(chan struct{}, 1)
+		s.asymSessions.Store(string(nonce), ch)
+		defer s.asymSessions.Delete(string(nonce))
+		if e := WriteMessage(conn, Message{OK: true}); e != nil {
+			return
+		}
+		select {
+		case <-ch:
+			_ = WriteMessage(conn, Message{OK: true})
+		case <-time.After(7 * time.Second):
+			_ = WriteMessage(conn, Message{Error: "no authenticated UDP uplink"})
+		}
+		return
+	}
 	if msg.Type == "ping" {
 		_ = WriteMessage(conn, Message{OK: true})
 		return
@@ -143,6 +165,15 @@ func (s *Server) serveUDP(ctx context.Context, pc net.PacketConn) {
 		if err != nil {
 			if ctx.Err() != nil {
 				return
+			}
+			continue
+		}
+		if nonce, valid := verifyProbe(buf[:n], "QAX1", s.Token); valid {
+			if value, found := s.asymSessions.Load(string(nonce[:])); found {
+				select {
+				case value.(chan struct{}) <- struct{}{}:
+				default:
+				}
 			}
 			continue
 		}

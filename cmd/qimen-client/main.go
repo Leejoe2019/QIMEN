@@ -21,6 +21,8 @@ func main() {
 	servers := flag.String("servers", "", "comma-separated QIMEN server host:port endpoints")
 	ca := flag.String("ca", "", "trusted certificate CA/self-signed server cert PEM; default system roots")
 	servername := flag.String("tls-server-name", "", "optional TLS certificate server name override")
+	asymProbe := flag.Bool("asym-probe", false, "test UDP uplink with TLS/TCP downlink, then exit")
+	asymUDP := flag.String("asym-udp-address", "", "UDP endpoint for asymmetric probe; defaults to the first server")
 	interval := flag.Duration("probe-interval", 15*time.Second, "path re-probe interval")
 	timeout := flag.Duration("dial-timeout", 5*time.Second, "server dial/probe timeout")
 	flag.Parse()
@@ -43,6 +45,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	c := &qimen.Client{Listen: *listen, HTTPListen: *httpListen, Servers: strings.Split(*servers, ","), Token: os.Getenv("QIMEN_TOKEN"), TLSConfig: &tls.Config{RootCAs: roots, ServerName: *servername, MinVersion: tls.VersionTLS13}, ProbeInterval: *interval, DialTimeout: *timeout}
+	if *asymProbe {
+		udpAddress := *asymUDP
+		if udpAddress == "" {
+			udpAddress = c.Servers[0]
+		}
+		rtt, err := qimen.ProbeAsymmetric(ctx, c.Servers[0], udpAddress, c.Token, c.TLSConfig, *timeout)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("ASYMMETRIC UDP_UP/TCP_DOWN verified: %s (UDP port %s)", rtt, udpAddress)
+		return
+	}
 	if err := c.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
