@@ -23,6 +23,7 @@ type Server struct {
 	DialTimeout  time.Duration
 	Logger       *log.Logger
 	asymSessions sync.Map
+ udpBenchSessions sync.Map
 }
 
 func (s *Server) logger() *log.Logger {
@@ -114,6 +115,7 @@ func (s *Server) ServeConn(conn net.Conn) {
 		_ = WriteMessage(conn, Message{OK: true})
 		return
 	}
+	if s.serveBenchmark(conn, msg) {return}
 	if msg.Type != "connect" {
 		_ = WriteMessage(conn, Message{Error: "unsupported request"})
 		return
@@ -168,6 +170,7 @@ func (s *Server) serveUDP(ctx context.Context, pc net.PacketConn) {
 			}
 			continue
 		}
+		if n == udpBenchmarkSize && string(buf[:4])=="QUB1" {s.receiveBenchUDP(buf[:n]);continue}
 		if nonce, valid := verifyProbe(buf[:n], "QAX1", s.Token); valid {
 			if value, found := s.asymSessions.Load(string(nonce[:])); found {
 				select {

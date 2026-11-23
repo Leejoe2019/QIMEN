@@ -19,6 +19,10 @@ const maxMessage = 4096
 // Control messages are small length-prefixed JSON objects inside an authenticated TLS connection.
 type Message struct {
 	Type   string `json:"type,omitempty"`
+ Size int64 `json:"size,omitempty"`
+ Count int `json:"count,omitempty"`
+ CC string `json:"cc,omitempty"`
+ Nagle bool `json:"nagle,omitempty"`
 	Target string `json:"target,omitempty"`
 	Token  string `json:"token,omitempty"`
 	OK     bool   `json:"ok,omitempty"`

@@ -83,6 +83,13 @@ func main() {
 	path := flag.String("config", "", "path to single JSON config file")
  legacy := flag.String("migrate-legacy", "", "one-time on-device migration of legacy credentials; does not start client")
 	asymProbe := flag.Bool("asym-probe", false, "probe UDP uplink and TCP downlink without relaying data")
+ bench := flag.String("bench", "", "authenticated benchmark: tcp-up, tcp-down or udp-up")
+ benchSize := flag.Int64("bench-size", 524288, "TCP test bytes")
+ benchCount := flag.Int("bench-count", 5000, "UDP synthetic data packets")
+ benchRate := flag.Float64("bench-rate", 20, "UDP target rate in Mbps")
+ benchClientCC := flag.String("bench-client-cc", "", "Linux per-socket client congestion control")
+ benchServerCC := flag.String("bench-server-cc", "", "Linux per-socket server congestion control")
+ benchNagle := flag.Bool("bench-nagle", false, "enable Nagle on TCP benchmark connections")
 	flag.Parse()
  if *legacy!="" {if err:=migrateLegacy(*path,*legacy);err!=nil{log.Fatal(err)};log.Println("private config migrated");return}
 	cfg, err := loadConfig(*path)
@@ -113,6 +120,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	c := &qimen.Client{Listen: cfg.Listen, HTTPListen: cfg.HTTPListen, Servers: cfg.Servers, Token: cfg.Token, TLSConfig: &tls.Config{RootCAs: roots, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS13}, ProbeInterval: interval, DialTimeout: timeout}
+	if *bench!="" {
+        if *bench=="udp-up" {
+            result,e:=qimen.BenchmarkUDPUp(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,*benchCount,*benchRate)
+            b,_:=json.Marshal(result);log.Printf("BENCH %s",b);if e!=nil{log.Fatal(e)};return
+        }
+        if *bench!="tcp-up" && *bench!="tcp-down" {log.Fatal("invalid --bench mode")}
+        direction:= "up";if *bench=="tcp-down"{direction="down"}
+        result,e:=qimen.BenchmarkTCP(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,direction,*benchSize,*benchClientCC,*benchServerCC,*benchNagle)
+        b,_:=json.Marshal(result);log.Printf("BENCH %s",b);if e!=nil{log.Fatal(e)};return
+    }
 	if *asymProbe {
 		udp := cfg.AsymUDPAddress
 		if udp == "" {
