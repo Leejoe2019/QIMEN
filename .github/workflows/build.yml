@@ -1,0 +1,65 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go tests and race detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Unit and end-to-end integration tests
+        run: go test -race -count=1 ./...
+      - name: Go vet
+        run: go vet ./...
+
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64}
+          - {goos: linux, goarch: arm64}
+          - {goos: windows, goarch: amd64}
+          - {goos: darwin, goarch: amd64}
+          - {goos: darwin, goarch: arm64}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Cross-compile server and client
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ext=''
+          if [[ "$GOOS" == windows ]]; then ext='.exe'; fi
+          go build -trimpath -ldflags='-s -w' -o "dist/qimen-server_${GOOS}_${GOARCH}${ext}" ./cmd/qimen-server
+          go build -trimpath -ldflags='-s -w' -o "dist/qimen-client_${GOOS}_${GOARCH}${ext}" ./cmd/qimen-client
+          (cd dist && sha256sum qimen-* > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qimen-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
