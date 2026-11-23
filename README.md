@@ -16,58 +16,55 @@ go build -o qimen-server ./cmd/qimen-server
 go build -o qimen-client ./cmd/qimen-client
 ```
 
-## Quick start
+## Quick start (single config file, no runtime environment variables)
 
-Generate a private TLS certificate with an appropriate SAN matching your server name/IP (example for testing on localhost):
+Both endpoints use `--config` and read secrets directly from one permission-restricted JSON file. **The old `QIMEN_TOKEN` environment-variable and `--tls-cert`/`--tls-key` CLI startup options have been removed.**
 
-```bash
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
-  -keyout server.key -out server.crt -days 30 \
-  -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
-export QIMEN_TOKEN="$(openssl rand -hex 32)"
+On the server, install one binary at `/usr/local/bin/qimen-server`, one service unit at `/etc/systemd/system/qimen.service`, and one JSON configuration at `/etc/qimen.json` (`0600`). A shortened example:
+
+```json
+{
+  "listen": "0.0.0.0:18443",
+  "udp_listen": "107.173.181.158:18443",
+  "token": "REPLACE_WITH_PRIVATE_SHARED_TOKEN",
+  "tls_certificate_pem": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----\\n",
+  "tls_private_key_pem": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
+  "dial_timeout": "12s"
+}
 ```
 
-Use the **same secret** on both endpoints; distribute it over a secure channel. On the server:
+Use actual PEM content escaped as JSON strings. TCP and UDP use **the same numeric port**. They remain separate transport sockets. To strictly use only one TCP listener, set `"udp_listen": "-"`; this disables UDP probes.
 
-```bash
-QIMEN_TOKEN='shared-long-random-secret' ./qimen-server \
-  --listen 0.0.0.0:8443 \
-  --tls-cert server.crt --tls-key server.key
+On the client, install `qimen-client` and a single private JSON config (for example `/etc/qimen-client.json`):
+
+```json
+{
+  "listen": "127.0.0.1:1080",
+  "http_listen": "127.0.0.1:1081",
+  "servers": ["107.173.181.158:18443"],
+  "token": "THE_SAME_PRIVATE_SHARED_TOKEN",
+  "tls_ca_pem": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----\\n",
+  "dial_timeout": "12s",
+  "probe_interval": "30s",
+  "asym_udp_address": "107.173.181.158:18443"
+}
 ```
 
-On your client (use the real reachable server address, an appropriate certificate, and matching token):
-
 ```bash
-QIMEN_TOKEN='shared-long-random-secret' ./qimen-client \
-  --servers 'your-server.example:8443' --ca server.crt \
-  --listen 127.0.0.1:1080 --http-listen 127.0.0.1:1081
-```
+chmod 600 /etc/qimen.json
+systemctl enable --now qimen
 
-Configure a SOCKS5 client for `127.0.0.1:1080`, or test via `curl --socks5-hostname 127.0.0.1:1080 https://example.com/`. For conventional proxy environment variables, use:
-
-```bash
-export http_proxy=http://127.0.0.1:1081
-export https_proxy=http://127.0.0.1:1081
+# Run on the client; do not set proxy environment variables:
+chmod 600 /etc/qimen-client.json
+qimen-client --config /etc/qimen-client.json
 curl --proxy http://127.0.0.1:1081 https://example.com/
+curl --socks5-hostname 127.0.0.1:1080 https://example.com/
+
+# Optional one-way UDP uplink / TCP downlink control-plane test:
+qimen-client --config /etc/qimen-client.json --asym-probe
 ```
 
-Both listeners default to **loopback only**. The HTTP proxy has no client authentication: do not expose it publicly.
-
-### One-way UDP + TCP return experiment
-
-Use a UDP listener on the server (for example `--udp-listen PUBLIC_IP:80`, where the port must be free and authorized). On the client:
-
-```bash
-QIMEN_TOKEN='your-secret' ./qimen-client \
-  --asym-probe --servers PUBLIC_IP:18443 \
-  --asym-udp-address PUBLIC_IP:80 --ca server.crt --dial-timeout 12s
-```
-
-The probe registers a random nonce over authenticated TLS/TCP, sends an HMAC-authenticated UDP datagram, and requests an acknowledgment **over TCP/TLS**. It does not carry user payloads over UDP. A successful probe proves one tested asymmetric path, not an optimized data transport.
-
-For server IPs that do not match the certificate SAN, regenerate the certificate with that IP as an `IP:` SAN, or use a resolvable hostname with a matching SAN. Certificate verification is never disabled. `--tls-server-name` can override the expected name for special DNS/routing arrangements.
-
-Both TCP and UDP port 8443 should be permitted for dual-protocol probes. If UDP cannot be bound, use `--udp-listen -` on the server to explicitly disable the UDP probe listener. For multiple relay nodes supply `--servers 'node1:8443,node2:8443'` (all should present certificates trusted under the client configuration). The client probes each server periodically, logs independent TCP/UDP path reachability and RTT, and routes new TCP sessions through the fastest currently responding TCP server, falling back if a connect fails.
+For an exact device-local migration from the previous test deployment, see [single-file migration instructions](docs/deployment-single-file.md). Do not commit private JSON configurations to GitHub. No proxy traffic is carried over UDP yet.
 
 ## Security and operational notes
 
