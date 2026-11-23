@@ -25,7 +25,7 @@ conf={
 }
 path='/etc/qimen.json'
 fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-with os.fdopen(fd,'w') as f:json.dump(conf,f,indent=2);f.write('\\n')
+with os.fdopen(fd,'w') as f:json.dump(conf,f,indent=2);f.write(chr(10))
 os.chmod(path,0o600)
 print(path, 'created, mode', oct(os.stat(path).st_mode&0o777))
 PY
@@ -54,7 +54,7 @@ conf={
   'asym_udp_address':'107.173.181.158:18443'
 }
 fd=os.open('/etc/qimen-client.json',os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-with os.fdopen(fd,'w') as f:json.dump(conf,f,indent=2);f.write('\\n')
+with os.fdopen(fd,'w') as f:json.dump(conf,f,indent=2);f.write(chr(10))
 os.chmod('/etc/qimen-client.json',0o600)
 print('Client config saved without displaying credentials')
 PY
