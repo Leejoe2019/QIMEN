@@ -16,6 +16,7 @@ import (
 
 type Client struct {
 	Listen        string
+	HTTPListen    string
 	Servers       []string
 	TLSConfig     *tls.Config
 	Token         string
@@ -64,6 +65,13 @@ func (c *Client) Run(ctx context.Context) error {
 	defer ln.Close()
 	go func() { <-ctx.Done(); ln.Close() }()
 	go c.probeLoop(ctx)
+	if c.HTTPListen != "" {
+		go func() {
+			if err := c.serveHTTP(ctx); err != nil && ctx.Err() == nil {
+				c.logger().Printf("HTTP proxy error: %v", err)
+			}
+		}()
+	}
 	c.logger().Printf("QIMEN SOCKS5 listening on %s", ln.Addr())
 	for {
 		conn, err := ln.Accept()

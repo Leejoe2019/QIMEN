@@ -17,6 +17,7 @@ import (
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:1080", "local SOCKS5 listen address")
+	httpListen := flag.String("http-listen", "127.0.0.1:1081", "local HTTP proxy listen address (empty disables)")
 	servers := flag.String("servers", "", "comma-separated QIMEN server host:port endpoints")
 	ca := flag.String("ca", "", "trusted certificate CA/self-signed server cert PEM; default system roots")
 	servername := flag.String("tls-server-name", "", "optional TLS certificate server name override")
@@ -41,7 +42,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	c := &qimen.Client{Listen: *listen, Servers: strings.Split(*servers, ","), Token: os.Getenv("QIMEN_TOKEN"), TLSConfig: &tls.Config{RootCAs: roots, ServerName: *servername, MinVersion: tls.VersionTLS13}, ProbeInterval: *interval, DialTimeout: *timeout}
+	c := &qimen.Client{Listen: *listen, HTTPListen: *httpListen, Servers: strings.Split(*servers, ","), Token: os.Getenv("QIMEN_TOKEN"), TLSConfig: &tls.Config{RootCAs: roots, ServerName: *servername, MinVersion: tls.VersionTLS13}, ProbeInterval: *interval, DialTimeout: *timeout}
 	if err := c.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
