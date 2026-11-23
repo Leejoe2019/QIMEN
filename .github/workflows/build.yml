@@ -18,7 +18,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - name: Resolve pinned dependencies
+        run: go mod tidy
       - name: Unit and end-to-end integration tests
         run: go test -race -count=1 ./...
       - name: Go vet
@@ -42,7 +44,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - name: Resolve pinned dependencies
+        run: go mod tidy
       - name: Cross-compile server and client
         shell: bash
         env:

@@ -83,7 +83,7 @@ func main() {
 	path := flag.String("config", "", "path to single JSON config file")
  legacy := flag.String("migrate-legacy", "", "one-time on-device migration of legacy credentials; does not start client")
 	asymProbe := flag.Bool("asym-probe", false, "probe UDP uplink and TCP downlink without relaying data")
- bench := flag.String("bench", "", "authenticated benchmark: tcp-up, tcp-down or udp-up")
+ bench := flag.String("bench", "", "authenticated benchmark: tcp-up, tcp-down, udp-up, grpc, http3")
  benchSize := flag.Int64("bench-size", 524288, "TCP test bytes")
  benchCount := flag.Int("bench-count", 5000, "UDP synthetic data packets")
  benchRate := flag.Float64("bench-rate", 20, "UDP target rate in Mbps")
@@ -121,6 +121,13 @@ func main() {
 	defer stop()
 	c := &qimen.Client{Listen: cfg.Listen, HTTPListen: cfg.HTTPListen, Servers: cfg.Servers, Token: cfg.Token, TLSConfig: &tls.Config{RootCAs: roots, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS13}, ProbeInterval: interval, DialTimeout: timeout}
 	if *bench!="" {
+        if *bench=="grpc" || *bench=="http3" {
+            var result qimen.BenchResult
+            var e error
+            if *bench=="grpc" {result,e=qimen.BenchmarkGRPC(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,int(*benchSize))
+            } else {result,e=qimen.BenchmarkHTTP3(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,int(*benchSize))}
+            b,_:=json.Marshal(result);log.Printf("BENCH %s",b);if e!=nil{log.Fatal(e)};return
+        }
         if *bench=="udp-up" {
             result,e:=qimen.BenchmarkUDPUp(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,*benchCount,*benchRate)
             b,_:=json.Marshal(result);log.Printf("BENCH %s",b);if e!=nil{log.Fatal(e)};return

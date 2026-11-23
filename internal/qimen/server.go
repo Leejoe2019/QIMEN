@@ -41,7 +41,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.Listen == "" {
 		s.Listen = ":8443"
 	}
-	tcp, err := tls.Listen("tcp", s.Listen, s.TLSConfig)
+	tcpTLS := s.TLSConfig.Clone()
+ tcpTLS.NextProtos = append(tcpTLS.NextProtos, "h2")
+ tcp, err := tls.Listen("tcp", s.Listen, tcpTLS)
 	if err != nil {
 		return err
 	}
@@ -59,7 +61,9 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		defer udp.Close()
 		go func() { <-ctx.Done(); udp.Close() }()
-		go s.serveUDP(ctx, udp)
+		mux := newQUICPacketConn(ctx, udp)
+  go s.serveHTTP3(ctx, mux)
+  go s.serveUDP(ctx, udp, mux)
 		s.logger().Printf("QIMEN UDP probes listening on %s", udp.LocalAddr())
 	}
 	s.logger().Printf("QIMEN TLS relay listening on %s", tcp.Addr())
@@ -82,6 +86,10 @@ func (s *Server) authorized(token string) bool {
 
 func (s *Server) ServeConn(conn net.Conn) {
 	defer conn.Close()
+ if tlsConn,ok:=conn.(*tls.Conn);ok {
+  if e:=tlsConn.Handshake();e!=nil{return}
+  if tlsConn.ConnectionState().NegotiatedProtocol=="h2" {s.serveGRPCConn(tlsConn);return}
+ }
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	msg, err := ReadMessage(conn)
 	if err != nil {
@@ -159,7 +167,7 @@ func bridge(left, right net.Conn) {
 	wg.Wait()
 }
 
-func (s *Server) serveUDP(ctx context.Context, pc net.PacketConn) {
+func (s *Server) serveUDP(ctx context.Context, pc net.PacketConn, quic *quicPacketConn) {
 	buf := make([]byte, 2048)
 	for {
 		_ = pc.SetReadDeadline(time.Now().Add(time.Second))
@@ -182,6 +190,7 @@ func (s *Server) serveUDP(ctx context.Context, pc net.PacketConn) {
 		}
 		nonce, ok := verifyProbe(buf[:n], "QPR1", s.Token)
 		if !ok {
+   if quic != nil && n>0 && buf[0]&0x40!=0 {quic.offer(buf[:n],addr)}
 			continue
 		}
 		response := probePacket("QPA1", nonce, s.Token)
