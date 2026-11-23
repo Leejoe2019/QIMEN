@@ -2,9 +2,9 @@
 
 **Adaptive, self-evolving network transport (early MVP).**
 
-QIMEN experiments with authenticated, two-ended network path discovery and proxying. The first release offers a usable TLS-protected TCP relay, a SOCKS5 client, authenticated UDP reachability/RTT probes, periodic path measurement, and multi-server TCP failover/selection.
+QIMEN experiments with authenticated, two-ended network path discovery and proxying. The current MVP offers a TLS-protected TCP relay, SOCKS5 CONNECT, a local HTTP proxy (plain HTTP and HTTPS CONNECT), authenticated UDP round-trip probes, a UDP-uplink/TCP-downlink **control-plane** verification probe, periodic path measurement, and multi-server TCP failover/selection.
 
-> **Current limitation:** UDP is **probe-only**, not a user-data path. The proposed asymmetric UDP-up/TCP-down transport, protocol mutation/evolution engine, traffic scheduling, and NAT-aware traversal are planned work, **not implemented**. UDP availability does not imply that UDP is used to carry client traffic. Only SOCKS5 `CONNECT` (TCP) is implemented.
+> **Current limitation:** UDP is **probe-only**, not a user-data path. An authenticated asymmetric **probe** is implemented, but reliable UDP-up/TCP-down payload transport, protocol mutation/evolution, traffic scheduling, and NAT-aware traversal are **not implemented**. SOCKS5 CONNECT, HTTP forward proxy, and HTTP CONNECT all relay user traffic over TLS/TCP.
 
 ## Builds
 
@@ -40,10 +40,30 @@ On your client (use the real reachable server address, an appropriate certificat
 ```bash
 QIMEN_TOKEN='shared-long-random-secret' ./qimen-client \
   --servers 'your-server.example:8443' --ca server.crt \
-  --listen 127.0.0.1:1080
+  --listen 127.0.0.1:1080 --http-listen 127.0.0.1:1081
 ```
 
-Configure a SOCKS5 client for `127.0.0.1:1080`, or test via `curl --socks5-hostname 127.0.0.1:1080 https://example.com/`.
+Configure a SOCKS5 client for `127.0.0.1:1080`, or test via `curl --socks5-hostname 127.0.0.1:1080 https://example.com/`. For conventional proxy environment variables, use:
+
+```bash
+export http_proxy=http://127.0.0.1:1081
+export https_proxy=http://127.0.0.1:1081
+curl --proxy http://127.0.0.1:1081 https://example.com/
+```
+
+Both listeners default to **loopback only**. The HTTP proxy has no client authentication: do not expose it publicly.
+
+### One-way UDP + TCP return experiment
+
+Use a UDP listener on the server (for example `--udp-listen PUBLIC_IP:80`, where the port must be free and authorized). On the client:
+
+```bash
+QIMEN_TOKEN='your-secret' ./qimen-client \
+  --asym-probe --servers PUBLIC_IP:18443 \
+  --asym-udp-address PUBLIC_IP:80 --ca server.crt --dial-timeout 12s
+```
+
+The probe registers a random nonce over authenticated TLS/TCP, sends an HMAC-authenticated UDP datagram, and requests an acknowledgment **over TCP/TLS**. It does not carry user payloads over UDP. A successful probe proves one tested asymmetric path, not an optimized data transport.
 
 For server IPs that do not match the certificate SAN, regenerate the certificate with that IP as an `IP:` SAN, or use a resolvable hostname with a matching SAN. Certificate verification is never disabled. `--tls-server-name` can override the expected name for special DNS/routing arrangements.
 
@@ -52,7 +72,7 @@ Both TCP and UDP port 8443 should be permitted for dual-protocol probes. If UDP 
 ## Security and operational notes
 
 - **TLS 1.3 is mandatory** and verifies the server certificate; server requests also require a shared token. Use a fresh high-entropy token and keep it secret.
-- The local SOCKS5 listener supports no-auth CONNECT. **Keep it bound to loopback** (the default); binding to a public interface creates an unauthenticated proxy entry point.
+- Both local SOCKS5 and HTTP listeners are unauthenticated. **Keep them bound to loopback** (the default); binding either to a public interface creates an unauthenticated proxy entry point.
 - The server can connect to any reachable TCP destination. Restrict outbound access with firewall rules if the relay is deployed in an untrusted environment.
 - The current UDP probe HMAC prevents unauthorized probe replies. It does not constitute a UDP data transport.
 - Discover only nodes and networks you own or are authorized to test. This MVP does not scan broad port ranges or execute generated code.
@@ -62,8 +82,12 @@ Both TCP and UDP port 8443 should be permitted for dual-protocol probes. If UDP 
 1. Client initiates a TLS 1.3 connection to server, sends a length-prefixed authenticated `ping` or `connect` control message.
 2. Server validates token, then sends an acknowledgment or establishes the requested TCP connection.
 3. For `connect`, raw TCP application bytes flow bidirectionally inside TLS. Half-closure propagates when possible.
-4. Separately, clients send fixed-length HMAC-authenticated UDP probes, receiving same-size replies when UDP round trips work.
+4. Separately, clients send fixed-length HMAC-authenticated UDP probes, receiving same-size replies when UDP round trips work. The optional asymmetric control-plane probe receives its acknowledgment over the authenticated TLS/TCP connection.
 5. The client periodically re-measures all configured servers; it selects the fastest TCP path for each new SOCKS CONNECT and falls back if needed.
+
+## Field tests
+
+See [2026-11-23 dev ↔ RackNerd field test](docs/field-tests-2026-11-23.md) for captured direction-specific connectivity, UDP packet-loss curves, TCP baselines, and limitations.
 
 ## Roadmap
 
