@@ -111,7 +111,11 @@ func (c *Client) checkPaths(ctx context.Context) {
 				st.TCP = time.Since(tcp.start)
 				tcp.conn.Close()
 			}
-			udp, uerr := ProbeUDP(srv, c.Token, c.DialTimeout)
+			udpTimeout := c.DialTimeout
+			if udpTimeout > 1500*time.Millisecond {
+				udpTimeout = 1500 * time.Millisecond
+			}
+			udp, uerr := ProbeUDP(srv, c.Token, udpTimeout)
 			if uerr == nil {
 				st.UDPAvailable = true
 				st.UDP = udp
