@@ -27,8 +27,8 @@ On the server, install one binary at `/usr/local/bin/qimen-server`, one service 
   "listen": "0.0.0.0:18443",
   "udp_listen": "107.173.181.158:18443",
   "token": "REPLACE_WITH_PRIVATE_SHARED_TOKEN",
-  "tls_certificate_pem": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----\\n",
-  "tls_private_key_pem": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
+  "tls_certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "tls_private_key_pem": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
   "dial_timeout": "12s"
 }
 ```
@@ -43,7 +43,7 @@ On the client, install `qimen-client` and a single private JSON config (for exam
   "http_listen": "127.0.0.1:1081",
   "servers": ["107.173.181.158:18443"],
   "token": "THE_SAME_PRIVATE_SHARED_TOKEN",
-  "tls_ca_pem": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----\\n",
+  "tls_ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
   "dial_timeout": "12s",
   "probe_interval": "30s",
   "asym_udp_address": "107.173.181.158:18443"
