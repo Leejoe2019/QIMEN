@@ -4,6 +4,7 @@ import (
 	"context"
 	grpcgo "google.golang.org/grpc"
 	"crypto/tls"
+ "crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ type Client struct {
 	DialTimeout   time.Duration
 	Logger        *log.Logger
  TransportMode string
+ HelloSplit string
  grpcMu sync.Mutex
  grpcConns map[string]*grpcgo.ClientConn
 	mu            sync.RWMutex
@@ -152,30 +154,39 @@ type tunnel struct {
 	start time.Time
 }
 
-func (c *Client) dialTunnel(ctx context.Context, server, typ, target string) (t tunnel, err error) {
-	dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: c.DialTimeout}, Config: c.TLSConfig}
-	start := time.Now()
-	conn, err := dialer.DialContext(ctx, "tcp", server)
-	if err != nil {
-		return t, err
-	}
-	_ = conn.SetDeadline(time.Now().Add(c.DialTimeout))
-	if err = WriteMessage(conn, Message{Type: typ, Target: target, Token: c.Token}); err != nil {
-		conn.Close()
-		return t, err
-	}
-	var reply Message
-	reply, err = ReadMessage(conn)
-	if err != nil {
-		conn.Close()
-		return t, err
-	}
-	if !reply.OK {
-		conn.Close()
-		return t, fmt.Errorf("server: %s", reply.Error)
-	}
-	_ = conn.SetDeadline(time.Time{})
-	return tunnel{conn: conn, start: start}, nil
+func (c *Client) dialTunnel(ctx context.Context, server, typ, target string)(t tunnel,err error){
+ mode:=c.HelloSplit
+ if mode==""{mode="adaptive"}
+ attempts:=[]string{"off"}
+ if mode=="split1"||mode=="split5"{attempts=[]string{mode}}
+ if mode=="adaptive"{attempts=[]string{"off","split5","split1"}}
+ timeout:=c.DialTimeout
+ if timeout<=0{timeout=6*time.Second}
+ per:=timeout/time.Duration(len(attempts))
+ if per<1500*time.Millisecond{per=1500*time.Millisecond}
+ for _,candidate:=range attempts{
+  if ctx.Err()!=nil{return t,ctx.Err()}
+  tryCtx,cancel:=context.WithTimeout(ctx,per)
+  began:=time.Now()
+  conn,e:=dialTLSWithSplit(tryCtx,server,c.TLSConfig,per,candidate)
+  cancel()
+  if e!=nil{
+   err=e
+   var certErr *tls.CertificateVerificationError
+   var unknownAuth x509.UnknownAuthorityError
+   if errors.As(e,&certErr)||errors.As(e,&unknownAuth){return t,e}
+   continue
+  }
+  _ = conn.SetDeadline(time.Now().Add(c.DialTimeout))
+  e=WriteMessage(conn,Message{Type:typ,Target:target,Token:c.Token})
+  var reply Message
+  if e==nil{reply,e=ReadMessage(conn)}
+  if e!=nil{_ = conn.Close();err=e;continue}
+  if !reply.OK{_ = conn.Close();return t,fmt.Errorf("server: %s",reply.Error)}
+  _ = conn.SetDeadline(time.Time{})
+  return tunnel{conn:conn,start:began},nil
+ }
+ return t,err
 }
 
 func (c *Client) rankedServers() []string {

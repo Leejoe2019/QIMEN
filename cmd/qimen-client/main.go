@@ -29,6 +29,7 @@ type config struct {
 	DialTimeout    string   `json:"dial_timeout"`
 	AsymUDPAddress string   `json:"asym_udp_address"`
  TransportMode string `json:"transport_mode"`
+ HelloSplit string `json:"tls_hello_split"`
 }
 
 func loadConfig(path string) (config, error) {
@@ -63,6 +64,8 @@ func loadConfig(path string) (config, error) {
 		cfg.HTTPListen = "127.0.0.1:1081"
 	}
 	if cfg.TransportMode=="" {cfg.TransportMode="auto"}
+ if cfg.HelloSplit=="" {cfg.HelloSplit="adaptive"}
+ if cfg.HelloSplit!="adaptive"&&cfg.HelloSplit!="off"&&cfg.HelloSplit!="split1"&&cfg.HelloSplit!="split5"{return cfg,errors.New("invalid tls_hello_split") }
  if cfg.TransportMode!="auto" && cfg.TransportMode!="tcp" && cfg.TransportMode!="grpc" {return cfg,errors.New("invalid transport_mode: must be auto, tcp or grpc")}
  return cfg, nil
 }
@@ -123,7 +126,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	c := &qimen.Client{Listen: cfg.Listen, HTTPListen: cfg.HTTPListen, Servers: cfg.Servers, Token: cfg.Token, TransportMode:cfg.TransportMode, TLSConfig: &tls.Config{RootCAs: roots, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS13}, ProbeInterval: interval, DialTimeout: timeout}
+	c := &qimen.Client{Listen: cfg.Listen, HTTPListen: cfg.HTTPListen, Servers: cfg.Servers, Token: cfg.Token, TransportMode:cfg.TransportMode, HelloSplit:cfg.HelloSplit, TLSConfig: &tls.Config{RootCAs: roots, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS13}, ProbeInterval: interval, DialTimeout: timeout}
 	if *bench!="" {
         if *bench=="grpc" || *bench=="http3" {
             var result qimen.BenchResult
