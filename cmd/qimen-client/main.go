@@ -74,7 +74,7 @@ func migrateLegacy(path,dir string) error {
  read:=func(n string)(string,error){b,e:=os.ReadFile(filepath.Join(dir,n));return string(b),e}
  token,e:=read("token");if e!=nil{return e}
  cert,e:=read("server.crt");if e!=nil{return e}
- cfg:=config{Listen:"127.0.0.1:1080",HTTPListen:"127.0.0.1:1081",Servers:[]string{"107.173.181.158:18443"},Token:strings.TrimSpace(token),TLSCAPEM:cert,DialTimeout:"12s",ProbeInterval:"30s",AsymUDPAddress:"107.173.181.158:18443"}
+ cfg:=config{Listen:"127.0.0.1:1080",HTTPListen:"127.0.0.1:1081",Servers:[]string{"107.173.181.158:5443"},Token:strings.TrimSpace(token),TLSCAPEM:cert,DialTimeout:"12s",ProbeInterval:"30s",AsymUDPAddress:"107.173.181.158:5443"}
  if cfg.Token==""{return errors.New("empty token")}
  if ok:=x509.NewCertPool().AppendCertsFromPEM([]byte(cert));!ok{return errors.New("invalid CA")}
  b,e:=json.MarshalIndent(cfg,"","  ");if e!=nil{return e}

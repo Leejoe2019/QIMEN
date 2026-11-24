@@ -53,7 +53,7 @@ func loadConfig(path string) (config, error) {
 		return c, fmt.Errorf("missing token or TLS certificate/key")
 	}
 	if c.Listen == "" {
-		c.Listen = "0.0.0.0:18443"
+		c.Listen = "0.0.0.0:5443"
 	}
 	_, port, err := net.SplitHostPort(c.Listen)
 	if err != nil {
@@ -80,7 +80,7 @@ func migrateLegacy(path, dir string) error {
   token,e:=read("token");if e!=nil{return e}
   cert,e:=read("server.crt");if e!=nil{return e}
   key,e:=read("server.key");if e!=nil{return e}
-  cfg:=config{Listen:"0.0.0.0:18443", UDPListen:"0.0.0.0:18443",Token:strings.TrimSpace(token),TLSCertificatePEM:cert,TLSPrivateKeyPEM:key,DialTimeout:"12s"}
+  cfg:=config{Listen:"0.0.0.0:5443", UDPListen:"0.0.0.0:5443",Token:strings.TrimSpace(token),TLSCertificatePEM:cert,TLSPrivateKeyPEM:key,DialTimeout:"12s"}
   if _,e=tls.X509KeyPair([]byte(cert),[]byte(key));e!=nil{return fmt.Errorf("invalid local TLS pair: %w",e)}
   if cfg.Token==""{return fmt.Errorf("empty local token")}
   b,e:=json.MarshalIndent(cfg,"","  ");if e!=nil{return e}

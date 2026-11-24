@@ -2,9 +2,9 @@
 
 **Adaptive, self-evolving network transport (early MVP).**
 
-QIMEN experiments with authenticated, two-ended network path discovery and proxying. The current MVP offers a TLS-protected TCP relay, SOCKS5 CONNECT, a local HTTP proxy (plain HTTP and HTTPS CONNECT), authenticated UDP round-trip probes, a UDP-uplink/TCP-downlink **control-plane** verification probe, periodic path measurement, and multi-server TCP failover/selection.
+QIMEN experiments with authenticated, two-ended network path discovery and proxying. The MVP supports SOCKS5 and local HTTP CONNECT/forward proxying, **two real encrypted TCP user-data transports** (raw TLS 1.3 and full-duplex gRPC over HTTP/2), selection by periodic transport RTT with fallback, optional TLS ClientHello TCP-write segmentation on the raw-TLS path, authenticated UDP probes, and separate QUIC/HTTP3 and HMAC-UDP experiments.
 
-> **Current limitation:** UDP is **probe-only**, not a user-data path. An authenticated asymmetric **probe** is implemented, but reliable UDP-up/TCP-down payload transport, protocol mutation/evolution, traffic scheduling, and NAT-aware traversal are **not implemented**. SOCKS5 CONNECT, HTTP forward proxy, and HTTP CONNECT all relay user traffic over TLS/TCP.
+> **Current limitation:** UDP is **probe-only**, not a user-data path. An authenticated asymmetric **probe** is implemented, but reliable UDP-up/TCP-down payload transport, protocol mutation/evolution, traffic scheduling, and NAT-aware traversal are **not implemented**. SOCKS5 CONNECT, HTTP forward proxy, and HTTP CONNECT relay user traffic using raw TLS/TCP or genuine HTTP/2 gRPC/TLS/TCP. UDP and HTTP/3 are probe/benchmark only.
 
 ## Builds
 
@@ -24,8 +24,8 @@ On the server, install one binary at `/usr/local/bin/qimen-server`, one service 
 
 ```json
 {
-  "listen": "0.0.0.0:18443",
-  "udp_listen": "107.173.181.158:18443",
+  "listen": "0.0.0.0:5443",
+  "udp_listen": "107.173.181.158:5443",
   "token": "REPLACE_WITH_PRIVATE_SHARED_TOKEN",
   "tls_certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
   "tls_private_key_pem": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
@@ -41,12 +41,14 @@ On the client, install `qimen-client` and a single private JSON config (for exam
 {
   "listen": "127.0.0.1:1080",
   "http_listen": "127.0.0.1:1081",
-  "servers": ["107.173.181.158:18443"],
+  "servers": ["107.173.181.158:5443"],
   "token": "THE_SAME_PRIVATE_SHARED_TOKEN",
   "tls_ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
   "dial_timeout": "12s",
   "probe_interval": "30s",
-  "asym_udp_address": "107.173.181.158:18443"
+  "asym_udp_address": "107.173.181.158:5443",
+  "transport_mode": "auto",
+  "tls_hello_split": "adaptive"
 }
 ```
 
@@ -66,6 +68,14 @@ qimen-client --config /etc/qimen-client.json --asym-probe
 
 For an exact device-local migration from the previous test deployment, see [single-file migration instructions](docs/deployment-single-file.md). Do not commit private JSON configurations to GitHub. No proxy traffic is carried over UDP yet.
 
+## Adaptive encrypted transports
+
+- `transport_mode: "auto"` (default) probes raw TLS and gRPC/HTTP2 separately, uses a warmed gRPC channel when its measured latency is lower, and falls back if a new tunnel fails. `"tcp"` forces raw TLS and `"grpc"` forces real gRPC streaming.
+- `tls_hello_split: "adaptive"` (default) retries the first raw TLS ClientHello as two write chunks (after bytes 5 or 1) if a normal handshake fails; `"off"`, `"split5"` and `"split1"` are also supported. This **does not** modify TCP sequence numbers, forge SYN/ACK, or guarantee distinct wire segments because kernel offload and middleboxes can coalesce writes.
+- Both transports use a pinned self-signed certificate with an **IP subjectAltName**. With no `tls_server_name` override, the IP address is used for certificate validation and Go TLS omits a DNS SNI. **Omission is not ECH or REALITY**; IP, timing and TLS fingerprints remain observable.
+- The optional `--bench udp-up --bench-udp-order reverse8` experiment sends authenticated UDP frames with sequence values reversed in 8-frame windows. It validates logical out-of-order packet handling, not raw TCP reordering. User payloads are **not** sent over UDP.
+- HTTP/3 is a genuine QUIC implementation under the same UDP numeric port, currently for testing only; if the UDP return path fails, it is not a candidate for user-data proxying.
+
 ## Security and operational notes
 
 - **TLS 1.3 is mandatory** and verifies the server certificate; server requests also require a shared token. Use a fresh high-entropy token and keep it secret.
@@ -78,9 +88,9 @@ For an exact device-local migration from the previous test deployment, see [sing
 
 1. Client initiates a TLS 1.3 connection to server, sends a length-prefixed authenticated `ping` or `connect` control message.
 2. Server validates token, then sends an acknowledgment or establishes the requested TCP connection.
-3. For `connect`, raw TCP application bytes flow bidirectionally inside TLS. Half-closure propagates when possible.
+3. For `connect`, client TCP streams flow bidirectionally inside raw TLS or authenticated gRPC/HTTP2 streaming; client chooses the route per new connection.
 4. Separately, clients send fixed-length HMAC-authenticated UDP probes, receiving same-size replies when UDP round trips work. The optional asymmetric control-plane probe receives its acknowledgment over the authenticated TLS/TCP connection.
-5. The client periodically re-measures all configured servers; it selects the fastest TCP path for each new SOCKS CONNECT and falls back if needed.
+5. The client periodically re-measures server and transport availability. It selects by measured RTT, uses gRPC connection reuse, and falls back to the other TCP transport if a new tunnel fails. This is not yet throughput-aware AI evolution.
 
 ## Field tests
 
@@ -89,7 +99,7 @@ See [2026-11-23 dev ↔ RackNerd field test](docs/field-tests-2026-11-23.md) for
 ## Roadmap
 
 - Reliable asymmetric UDP-up / TCP-down framing with sequencing, congestion control, loss recovery, encryption, and stateful failover.
-- More path candidates (ports, interfaces, protocol families, direction-specific routes) and rate-limited exploration.
+- Throughput-aware scoring, additional independently verified protocol candidates, reproducible mutation experiments, rate-limited exploration and per-environment learning.
 - Safe sandbox for AI-generated protocol candidates; reproducible experiments and policy learning.
 - Observability, throughput benchmarks, adaptive multipath scheduling, and platform-specific TUN integration.
 
