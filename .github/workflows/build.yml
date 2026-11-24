@@ -1,0 +1,93 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go tests and race detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Resolve pinned dependencies
+        run: go mod tidy
+      - name: Unit and end-to-end integration tests
+        run: go test -race -timeout=75s -count=1 ./...
+      - name: Go vet
+        run: go vet ./...
+
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64}
+          - {goos: linux, goarch: arm64}
+          - {goos: windows, goarch: amd64}
+          - {goos: darwin, goarch: amd64}
+          - {goos: darwin, goarch: arm64}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Resolve pinned dependencies
+        run: go mod tidy
+      - name: Cross-compile server and client
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ext=''
+          if [[ "$GOOS" == windows ]]; then ext='.exe'; fi
+          go build -trimpath -ldflags='-s -w' -o "dist/qimen-server_${GOOS}_${GOARCH}${ext}" ./cmd/qimen-server
+          go build -trimpath -ldflags='-s -w' -o "dist/qimen-client_${GOOS}_${GOARCH}${ext}" ./cmd/qimen-client
+          (cd dist && sha256sum qimen-* > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qimen-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish public CI binaries
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qimen-*
+          merge-multiple: true
+          path: dist
+      - name: Create run-specific public prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="ci-${{ github.run_number }}"
+          sha256sum dist/qimen-* > dist/SHA256SUMS
+          gh release create "$tag" dist/qimen-* dist/SHA256SUMS \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "QIMEN CI build ${{ github.run_number }}" --notes "Automated tested binaries. Do not deploy without verifying SHA256SUMS." --prerelease
