@@ -2,7 +2,6 @@ package qimen
 
 import (
  "context"
- "crypto/tls"
  "errors"
  "io"
  "net"
