@@ -90,6 +90,7 @@ func main() {
  benchSize := flag.Int64("bench-size", 524288, "TCP test bytes")
  benchCount := flag.Int("bench-count", 5000, "UDP synthetic data packets")
  benchRate := flag.Float64("bench-rate", 20, "UDP target rate in Mbps")
+ benchUDPOrder := flag.String("bench-udp-order", "normal", "UDP benchmark logical order: normal or reverse8")
  benchClientCC := flag.String("bench-client-cc", "", "Linux per-socket client congestion control")
  benchServerCC := flag.String("bench-server-cc", "", "Linux per-socket server congestion control")
  benchNagle := flag.Bool("bench-nagle", false, "enable Nagle on TCP benchmark connections")
@@ -132,7 +133,7 @@ func main() {
             b,_:=json.Marshal(result);log.Printf("BENCH %s",b);if e!=nil{log.Fatal(e)};return
         }
         if *bench=="udp-up" {
-            result,e:=qimen.BenchmarkUDPUp(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,*benchCount,*benchRate)
+            result,e:=qimen.BenchmarkUDPUpWithOrder(ctx,c.Servers[0],c.Token,c.TLSConfig,timeout,*benchCount,*benchRate,*benchUDPOrder)
             b,_:=json.Marshal(result);log.Printf("BENCH %s",b);if e!=nil{log.Fatal(e)};return
         }
         if *bench!="tcp-up" && *bench!="tcp-down" {log.Fatal("invalid --bench mode")}

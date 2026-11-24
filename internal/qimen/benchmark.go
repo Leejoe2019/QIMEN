@@ -126,7 +126,12 @@ func BenchmarkTCP(ctx context.Context, address,token string, tlsConf *tls.Config
 }
 
 func BenchmarkUDPUp(ctx context.Context, address,token string,tlsConf *tls.Config,timeout time.Duration,count int,rateMbps float64)(BenchResult,error){
- res:=BenchResult{Protocol:"QUB1/HMAC/UDP + TCP-feedback",Direction:"up",Sent:int64(count*udpBenchmarkSize)}
+ return BenchmarkUDPUpWithOrder(ctx,address,token,tlsConf,timeout,count,rateMbps,"normal")
+}
+func BenchmarkUDPUpWithOrder(ctx context.Context, address,token string,tlsConf *tls.Config,timeout time.Duration,count int,rateMbps float64,order string)(BenchResult,error){
+ if order!="normal" && order!="reverse8" {return BenchResult{},fmt.Errorf("invalid benchmark order")}
+
+ res:=BenchResult{Protocol:"QUB1/HMAC/UDP + TCP-feedback ("+order+")",Direction:"up",Sent:int64(count*udpBenchmarkSize)}
  if count<=0||count>maxBenchPackets||rateMbps<=0||rateMbps>500{return res,fmt.Errorf("invalid rate or packet count")}
  began:=time.Now()
  conn,err:=dialBenchTLS(ctx,address,tlsConf,timeout);if err!=nil{return res,err}
@@ -150,7 +155,14 @@ func BenchmarkUDPUp(ctx context.Context, address,token string,tlsConf *tls.Confi
   if err=ctx.Err();err!=nil{return res,err}
   wait:=transferStart.Add(time.Duration(i)*interval).Sub(time.Now())
   if wait>0{time.Sleep(wait)}
-  binary.BigEndian.PutUint32(packet[12:16],uint32(i))
+  seq:=i
+  if order=="reverse8"{
+   base:=(i/8)*8
+   width:=8
+   if count-base<width {width=count-base}
+   seq=base+(width-1)-(i-base)
+  }
+  binary.BigEndian.PutUint32(packet[12:16],uint32(seq))
   h:=hmac.New(sha256.New,[]byte(token));_,_=h.Write(packet[:udpBenchmarkPayloadEnd]);copy(packet[udpBenchmarkPayloadEnd:],h.Sum(nil))
   if _,err=udp.Write(packet);err!=nil{return res,err}
  }
