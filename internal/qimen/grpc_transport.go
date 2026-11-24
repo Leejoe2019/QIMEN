@@ -58,6 +58,8 @@ type grpcTunnelConn struct {
  readMu sync.Mutex
  pending []byte
  closeOnce sync.Once
+ deadlineMu sync.Mutex
+ deadlineTimer *time.Timer
 }
 func (g *grpcTunnelConn) Read(p []byte)(int,error){
  g.readMu.Lock();defer g.readMu.Unlock()
@@ -84,14 +86,23 @@ func (g *grpcTunnelConn) Write(p []byte)(int,error){
 }
 func (g *grpcTunnelConn) CloseWrite()error{return g.stream.CloseSend()}
 func (g *grpcTunnelConn) Close()error{
- g.closeOnce.Do(func(){g.cancel()})
+ g.closeOnce.Do(func(){g.deadlineMu.Lock();if g.deadlineTimer!=nil {g.deadlineTimer.Stop()};g.deadlineMu.Unlock();g.cancel()})
  return nil
 }
 func (g *grpcTunnelConn) LocalAddr()net.Addr{return grpcDummyAddr("qimen-local")}
 func (g *grpcTunnelConn) RemoteAddr()net.Addr{return grpcDummyAddr("qimen-grpc")}
-func (g *grpcTunnelConn) SetDeadline(time.Time)error{return nil}
-func (g *grpcTunnelConn) SetReadDeadline(time.Time)error{return nil}
-func (g *grpcTunnelConn) SetWriteDeadline(time.Time)error{return nil}
+func (g *grpcTunnelConn) SetDeadline(t time.Time)error{
+ g.deadlineMu.Lock()
+ defer g.deadlineMu.Unlock()
+ if g.deadlineTimer!=nil{g.deadlineTimer.Stop();g.deadlineTimer=nil}
+ if !t.IsZero(){
+  remaining:=time.Until(t)
+  if remaining<=0{g.cancel()}else{g.deadlineTimer=time.AfterFunc(remaining,g.cancel)}
+ }
+ return nil
+}
+func (g *grpcTunnelConn) SetReadDeadline(t time.Time)error{return g.SetDeadline(t)}
+func (g *grpcTunnelConn) SetWriteDeadline(t time.Time)error{return g.SetDeadline(t)}
 type grpcDummyAddr string
 func (a grpcDummyAddr)Network()string{return "grpc"}
 func (a grpcDummyAddr)String()string{return string(a)}
