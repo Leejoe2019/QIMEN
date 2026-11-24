@@ -106,6 +106,9 @@ func (c *Client) probeLoop(ctx context.Context) {
 }
 
 func (c *Client) checkPaths(ctx context.Context) {
+ c.mu.Lock()
+ if c.stats==nil{c.stats=make(map[string]PathStat)}
+ c.mu.Unlock()
 	var wg sync.WaitGroup
 	for _, srv := range c.Servers {
 		wg.Add(1)
