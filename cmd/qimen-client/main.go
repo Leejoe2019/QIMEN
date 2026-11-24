@@ -41,13 +41,6 @@ func loadConfig(path string) (config, error) {
 	if path == "" {
 		return cfg, errors.New("--config is required")
 	}
-	st, err := os.Stat(path)
-	if err != nil {
-		return cfg, err
-	}
-	if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 {
-		return cfg, errors.New("config must be a regular file with permissions 0600 or stricter")
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		return cfg, err
@@ -80,12 +73,12 @@ func loadConfig(path string) (config, error) {
  if cfg.UDPCopies<1 || cfg.UDPCopies>3 {return cfg,errors.New("udp_copies must be 1..3")}
  return cfg, nil
 }
-func migrateLegacy(path,dir string) error {
- if path==""||dir=="" {return errors.New("--config and --migrate-legacy required")}
+func migrateLegacy(path,dir,server string) error {
+ if path==""||dir==""||server=="" {return errors.New("--config, --migrate-legacy and --legacy-server required")}
  read:=func(n string)(string,error){b,e:=os.ReadFile(filepath.Join(dir,n));return string(b),e}
  token,e:=read("token");if e!=nil{return e}
  cert,e:=read("server.crt");if e!=nil{return e}
- cfg:=config{Listen:"127.0.0.1:1080",HTTPListen:"127.0.0.1:1081",Servers:[]string{"107.173.181.158:43"},Token:strings.TrimSpace(token),TLSCAPEM:cert,DialTimeout:"12s",ProbeInterval:"30s",AsymUDPAddress:"107.173.181.158:43"}
+ cfg:=config{Listen:"127.0.0.1:1080",HTTPListen:"127.0.0.1:1081",Servers:[]string{server},Token:strings.TrimSpace(token),TLSCAPEM:cert,DialTimeout:"12s",ProbeInterval:"30s",AsymUDPAddress:server}
  if cfg.Token==""{return errors.New("empty token")}
  if ok:=x509.NewCertPool().AppendCertsFromPEM([]byte(cert));!ok{return errors.New("invalid CA")}
  b,e:=json.MarshalIndent(cfg,"","  ");if e!=nil{return e}
@@ -99,6 +92,7 @@ func migrateLegacy(path,dir string) error {
 func main() {
 	path := flag.String("config", "", "path to single JSON config file")
  legacy := flag.String("migrate-legacy", "", "one-time on-device migration of legacy credentials; does not start client")
+ legacyServer := flag.String("legacy-server", "", "server host:port for legacy migration")
 	asymProbe := flag.Bool("asym-probe", false, "probe UDP uplink and TCP downlink without relaying data")
  bench := flag.String("bench", "", "authenticated benchmark: tcp-up, tcp-down, udp-up, grpc, http3")
  benchSize := flag.Int64("bench-size", 524288, "TCP test bytes")
@@ -109,7 +103,7 @@ func main() {
  benchServerCC := flag.String("bench-server-cc", "", "Linux per-socket server congestion control")
  benchNagle := flag.Bool("bench-nagle", false, "enable Nagle on TCP benchmark connections")
 	flag.Parse()
- if *legacy!="" {if err:=migrateLegacy(*path,*legacy);err!=nil{log.Fatal(err)};log.Println("private config migrated");return}
+ if *legacy!="" {if err:=migrateLegacy(*path,*legacy,*legacyServer);err!=nil{log.Fatal(err)};log.Println("private config migrated");return}
 	cfg, err := loadConfig(*path)
 	if err != nil {
 		log.Fatal(err)

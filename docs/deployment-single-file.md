@@ -7,7 +7,7 @@ RackNerd is restricted to **three QIMEN-managed files** and one numeric listenin
 ```text
 /usr/local/bin/qimen-server           # GitHub Actions-produced Linux amd64 binary
 /etc/systemd/system/qimen.service      # the only QIMEN server service
-/etc/qimen.json                        # mode 0600, token and PEM key embedded
+/etc/qimen.json                        # token and PEM key embedded
 ```
 
 The single service binds both **TCP 43** and **UDP 43**. TCP and UDP are different sockets, but share the same numeric port. `Environment=` is empty, no secret is passed by CLI flags, and no compiler/toolchain is installed by QIMEN on RackNerd.
@@ -37,7 +37,6 @@ systemctl status qimen.service --no-pager
 systemctl show qimen.service -p MainPID -p ActiveState -p Environment
 ss -lntup | grep qimen
 sha256sum /usr/local/bin/qimen-server
-stat -c '%a %n' /etc/qimen.json
 ```
 
 Client:

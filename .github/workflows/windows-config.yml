@@ -1,0 +1,35 @@
+name: Windows config compatibility check
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-config:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go mod tidy
+      - run: go test ./cmd/qimen-client ./cmd/qimen-server
+      - name: Build Windows client compatibility artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -trimpath -ldflags="-s -w" -o dist/qimen-client_windows_amd64.exe ./cmd/qimen-client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash=(Get-FileHash dist/qimen-client_windows_amd64.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  qimen-client_windows_amd64.exe" | Set-Content -Encoding ascii dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qimen-windows-config-tested
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7

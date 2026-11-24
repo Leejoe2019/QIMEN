@@ -32,13 +32,6 @@ func loadConfig(path string) (config, error) {
 	if path == "" {
 		return c, fmt.Errorf("--config is required")
 	}
-	st, err := os.Stat(path)
-	if err != nil {
-		return c, err
-	}
-	if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 {
-		return c, fmt.Errorf("config must be a regular file with permissions 0600 or stricter")
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		return c, err

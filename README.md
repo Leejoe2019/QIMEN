@@ -18,9 +18,9 @@ go build -o qimen-client ./cmd/qimen-client
 
 ## Quick start (single config file, no runtime environment variables)
 
-Both endpoints use `--config` and read secrets directly from one permission-restricted JSON file. **The old `QIMEN_TOKEN` environment-variable and `--tls-cert`/`--tls-key` CLI startup options have been removed.**
+Both endpoints use `--config` and read secrets directly from one JSON file. **The old `QIMEN_TOKEN` environment-variable and `--tls-cert`/`--tls-key` CLI startup options have been removed.**
 
-On the server, install one binary at `/usr/local/bin/qimen-server`, one service unit at `/etc/systemd/system/qimen.service`, and one JSON configuration at `/etc/qimen.json` (`0600`). A shortened example:
+On the server, install one binary at `/usr/local/bin/qimen-server`, one service unit at `/etc/systemd/system/qimen.service`, and one JSON configuration at `/etc/qimen.json` (restrict access if desired). A shortened example:
 
 ```json
 {
@@ -53,11 +53,9 @@ On the client, install `qimen-client` and a single private JSON config (for exam
 ```
 
 ```bash
-chmod 600 /etc/qimen.json
 systemctl enable --now qimen
 
 # Run on the client; do not set proxy environment variables:
-chmod 600 /etc/qimen-client.json
 qimen-client --config /etc/qimen-client.json
 curl --proxy http://localhost:1081 https://example.com/
 curl --socks5-hostname localhost:1080 https://example.com/
