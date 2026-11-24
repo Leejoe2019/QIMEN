@@ -2,6 +2,7 @@ package qimen
 
 import (
 	"context"
+	grpcgo "google.golang.org/grpc"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
@@ -23,14 +24,19 @@ type Client struct {
 	ProbeInterval time.Duration
 	DialTimeout   time.Duration
 	Logger        *log.Logger
+ TransportMode string
+ grpcMu sync.Mutex
+ grpcConns map[string]*grpcgo.ClientConn
 	mu            sync.RWMutex
 	stats         map[string]PathStat
 }
 
 type PathStat struct {
 	TCP                        time.Duration
+ GRPC                       time.Duration
 	UDP                        time.Duration
 	TCPAvailable, UDPAvailable bool
+ GRPCAvailable bool
 	Checked                    time.Time
 }
 
@@ -58,6 +64,7 @@ func (c *Client) Run(ctx context.Context) error {
 	c.stats = make(map[string]PathStat)
 	c.mu.Unlock()
 	c.checkPaths(ctx)
+	go func(){<-ctx.Done();c.closeGRPCConns()}()
 	ln, err := net.Listen("tcp", c.Listen)
 	if err != nil {
 		return err
@@ -109,8 +116,16 @@ func (c *Client) checkPaths(ctx context.Context) {
 			if err == nil {
 				st.TCPAvailable = true
 				st.TCP = time.Since(tcp.start)
-				tcp.conn.Close()
-			}
+                tcp.conn.Close()
+            }
+            if c.TransportMode!="tcp" {
+             began:=time.Now()
+             if probe,e:=c.dialGRPCTunnel(ctx,srv,"PING");e==nil {
+              st.GRPCAvailable=true
+              st.GRPC=time.Since(began)
+              probe.Close()
+             }
+            }
 			udpTimeout := c.DialTimeout
 			if udpTimeout > 1500*time.Millisecond {
 				udpTimeout = 1500 * time.Millisecond
@@ -123,7 +138,7 @@ func (c *Client) checkPaths(ctx context.Context) {
 			c.mu.Lock()
 			c.stats[srv] = st
 			c.mu.Unlock()
-			c.logger().Printf("path %s TCP=%v/%s UDP=%v/%s", srv, st.TCPAvailable, st.TCP, st.UDPAvailable, st.UDP)
+			c.logger().Printf("path %s TCP=%v/%s GRPC=%v/%s UDP=%v/%s", srv, st.TCPAvailable, st.TCP,st.GRPCAvailable,st.GRPC, st.UDPAvailable, st.UDP)
 		}(srv)
 	}
 	wg.Wait()
@@ -251,10 +266,10 @@ func (c *Client) handleSOCKS(conn net.Conn) {
 	var remote net.Conn
 	for _, server := range c.rankedServers() {
 		ctx, cancel := context.WithTimeout(context.Background(), c.DialTimeout)
-		result, err := c.dialTunnel(ctx, server, "connect", target)
-		cancel()
-		if err == nil {
-			remote = result.conn
+		remoteConn, err := c.openTunnel(ctx, server, target)
+        cancel()
+        if err == nil {
+            remote = remoteConn
 			break
 		}
 		c.logger().Printf("tunnel %s failed: %v", server, err)

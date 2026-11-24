@@ -5,6 +5,7 @@ import (
  "context"
  "crypto/tls"
  "fmt"
+ "io"
  "net"
  "net/http"
  "strings"
@@ -16,6 +17,58 @@ import (
  "google.golang.org/grpc/metadata"
  "google.golang.org/protobuf/types/known/wrapperspb"
 )
+
+type tunnelService interface {
+ Pipe(grpcgo.ServerStream) error
+}
+
+type tunnelServiceImpl struct{ relay *Server }
+
+func (t *tunnelServiceImpl) Pipe(stream grpcgo.ServerStream) error {
+ md,ok:=metadata.FromIncomingContext(stream.Context())
+ if !ok {return fmt.Errorf("missing authentication")}
+ auth:=""
+ for _,v:=range md.Get("authorization") {if strings.HasPrefix(v,"Bearer "){auth=strings.TrimPrefix(v,"Bearer ");break}}
+ if !t.relay.authorized(auth) {return fmt.Errorf("unauthorized")}
+ first:=new(wrapperspb.BytesValue)
+ if err:=stream.RecvMsg(first);err!=nil{return err}
+ target:=string(first.Value)
+ if target=="PING" {return stream.SendMsg(&wrapperspb.BytesValue{Value:[]byte("OK")})}
+ if _,_,err:=net.SplitHostPort(target);err!=nil{return fmt.Errorf("invalid destination")}
+ dur:=t.relay.DialTimeout
+ if dur<=0 {dur=10*time.Second}
+ remote,err:=net.DialTimeout("tcp",target,dur)
+ if err!=nil {_ = stream.SendMsg(&wrapperspb.BytesValue{Value:[]byte("ERR")});return nil}
+ defer remote.Close()
+ if err=stream.SendMsg(&wrapperspb.BytesValue{Value:[]byte("OK")});err!=nil{return err}
+ done:=make(chan error,1)
+ go func(){
+  buffer:=make([]byte,16*1024)
+  for {
+   n,err:=remote.Read(buffer)
+   if n>0 {
+    if e:=stream.SendMsg(&wrapperspb.BytesValue{Value:append([]byte(nil),buffer[:n]...)});e!=nil{done<-e;return}
+   }
+   if err!=nil{done<-err;return}
+  }
+ }()
+ go func(){<-stream.Context().Done();_ = remote.Close()}()
+ for {
+  packet:=new(wrapperspb.BytesValue)
+  err=stream.RecvMsg(packet)
+  if err!=nil{break}
+  if len(packet.Value)>0 {
+   if _,e:=remote.Write(packet.Value);e!=nil{err=e;break}
+  }
+ }
+ if tcp,ok:=remote.(*net.TCPConn);ok {_ = tcp.CloseWrite()}
+ select {
+ case <-done:
+ case <-stream.Context().Done():
+ }
+ if err==io.EOF {return nil}
+ return err
+}
 
 type echoBenchmarkService interface {
  Echo(context.Context,*wrapperspb.BytesValue)(*wrapperspb.BytesValue,error)
@@ -39,9 +92,19 @@ func (s *Server) serveGRPCConn(conn net.Conn){
    return interceptor(ctx,input,info,handle)
   }}},
  },echoBenchmarkServer{})
+ service.RegisterService(&grpcgo.ServiceDesc{
+  ServiceName:"qimen.Tunnel",
+  HandlerType:(*tunnelService)(nil),
+  Streams:[]grpcgo.StreamDesc{{
+   StreamName:"Pipe",
+   ClientStreams:true,
+   ServerStreams:true,
+   Handler:func(srv interface{},stream grpcgo.ServerStream)error{return srv.(tunnelService).Pipe(stream)},
+  }},
+ },&tunnelServiceImpl{relay:s})
  handler:=http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   auth:=strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")
-  if r.Method!="POST" || r.URL.Path!="/qimen.Bench/Echo" || !s.authorized(auth){
+  if r.Method!="POST" || (r.URL.Path!="/qimen.Bench/Echo" && r.URL.Path!="/qimen.Tunnel/Pipe") || !s.authorized(auth){
    http.Error(w,"unauthorized gRPC benchmark",http.StatusForbidden);return
   }
   service.ServeHTTP(w,r)

@@ -88,7 +88,7 @@ func (s *Server) ServeConn(conn net.Conn) {
 	defer conn.Close()
  if tlsConn,ok:=conn.(*tls.Conn);ok {
   if e:=tlsConn.Handshake();e!=nil{return}
-  if tlsConn.ConnectionState().NegotiatedProtocol=="h2" {s.serveGRPCConn(tlsConn);return}
+  if tlsConn.ConnectionState().NegotiatedProtocol=="h2" {_ = conn.SetDeadline(time.Time{});s.serveGRPCConn(tlsConn);return}
  }
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	msg, err := ReadMessage(conn)

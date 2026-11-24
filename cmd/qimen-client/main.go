@@ -28,6 +28,7 @@ type config struct {
 	ProbeInterval  string   `json:"probe_interval"`
 	DialTimeout    string   `json:"dial_timeout"`
 	AsymUDPAddress string   `json:"asym_udp_address"`
+ TransportMode string `json:"transport_mode"`
 }
 
 func loadConfig(path string) (config, error) {
@@ -61,7 +62,9 @@ func loadConfig(path string) (config, error) {
 	if cfg.HTTPListen == "" {
 		cfg.HTTPListen = "127.0.0.1:1081"
 	}
-	return cfg, nil
+	if cfg.TransportMode=="" {cfg.TransportMode="auto"}
+ if cfg.TransportMode!="auto" && cfg.TransportMode!="tcp" && cfg.TransportMode!="grpc" {return cfg,errors.New("invalid transport_mode: must be auto, tcp or grpc")}
+ return cfg, nil
 }
 func migrateLegacy(path,dir string) error {
  if path==""||dir=="" {return errors.New("--config and --migrate-legacy required")}
@@ -119,7 +122,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	c := &qimen.Client{Listen: cfg.Listen, HTTPListen: cfg.HTTPListen, Servers: cfg.Servers, Token: cfg.Token, TLSConfig: &tls.Config{RootCAs: roots, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS13}, ProbeInterval: interval, DialTimeout: timeout}
+	c := &qimen.Client{Listen: cfg.Listen, HTTPListen: cfg.HTTPListen, Servers: cfg.Servers, Token: cfg.Token, TransportMode:cfg.TransportMode, TLSConfig: &tls.Config{RootCAs: roots, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS13}, ProbeInterval: interval, DialTimeout: timeout}
 	if *bench!="" {
         if *bench=="grpc" || *bench=="http3" {
             var result qimen.BenchResult

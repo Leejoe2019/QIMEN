@@ -14,10 +14,9 @@ func (c *Client) establish(ctx context.Context, target string) (net.Conn, error)
 	var last error
 	for _, server := range c.rankedServers() {
 		tryCtx, cancel := context.WithTimeout(ctx, c.DialTimeout)
-		tun, err := c.dialTunnel(tryCtx, server, "connect", target)
-		cancel()
-		if err == nil {
-			return tun.conn, nil
+		conn, err := c.openTunnel(tryCtx,server,target)
+        cancel()
+        if err == nil {return conn,nil
 		}
 		last = err
 		c.logger().Printf("HTTP tunnel %s: %v", server, err)
