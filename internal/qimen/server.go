@@ -43,7 +43,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.Listen == "" {
 		s.Listen = ":8443"
 	}
-	s.asymQUICSlots = make(chan struct{}, 64)
+	// Split QUIC is intentionally unavailable in this stable build.
  tcpTLS := s.TLSConfig.Clone()
  tcpTLS.NextProtos = append(tcpTLS.NextProtos, "h2")
  tcp, err := tls.Listen("tcp", s.Listen, tcpTLS)
@@ -103,7 +103,7 @@ func (s *Server) ServeConn(conn net.Conn) {
 		return
 	}
 	if msg.Type == "asym_quic" {
-  s.serveAsymQUIC(conn)
+  _ = WriteMessage(conn, Message{Error: "asymmetric QUIC disabled in stable build"})
   return
  }
  if msg.Type == "asym" {
@@ -185,7 +185,7 @@ func (s *Server) serveUDP(ctx context.Context, pc net.PacketConn, quic *quicPack
 			}
 			continue
 		}
-		if n>=asymQUICHeader && string(buf[:4])=="QAQ1" { s.receiveAsymQUIC(buf[:n]); continue }
+		if n>=asymQUICHeader && string(buf[:4])=="QAQ1" { continue }
   if n == udpBenchmarkSize && string(buf[:4])=="QUB1" {s.receiveBenchUDP(buf[:n]);continue}
 		if nonce, valid := verifyProbe(buf[:n], "QAX1", s.Token); valid {
 			if value, found := s.asymSessions.Load(string(nonce[:])); found {

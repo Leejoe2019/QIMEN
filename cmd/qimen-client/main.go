@@ -59,6 +59,8 @@ func loadConfig(path string) (config, error) {
 	}
 	if cfg.HTTPListen == "" {
 		cfg.HTTPListen = "127.0.0.1:1081"
+	} else if cfg.HTTPListen == "-" {
+		cfg.HTTPListen = ""
 	}
 	if cfg.TransportMode=="" {cfg.TransportMode="auto"}
  if cfg.HelloSplit=="" {cfg.HelloSplit="adaptive"}
@@ -66,8 +68,8 @@ func loadConfig(path string) (config, error) {
  if cfg.TransportMode!="auto" && cfg.TransportMode!="tcp" && cfg.TransportMode!="grpc" {return cfg,errors.New("invalid transport_mode: must be auto, tcp or grpc")}
  if cfg.Uplink=="" {cfg.Uplink="auto"}
  if cfg.Downlink=="" {cfg.Downlink="auto"}
- if !(cfg.Uplink=="auto" && cfg.Downlink=="auto") && !(cfg.Uplink=="quic-udp" && cfg.Downlink=="tls-tcp") {
-  return cfg,errors.New("unsupported uplink/downlink pair; use auto/auto or quic-udp/tls-tcp")
+ if !(cfg.Uplink=="auto" && cfg.Downlink=="auto") {
+  return cfg,errors.New("experimental split QUIC unavailable in stable build; use auto/auto")
  }
  if cfg.UDPCopies==0 {cfg.UDPCopies=1}
  if cfg.UDPCopies<1 || cfg.UDPCopies>3 {return cfg,errors.New("udp_copies must be 1..3")}

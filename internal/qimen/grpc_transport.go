@@ -131,12 +131,8 @@ func (c *Client) dialGRPCTunnel(ctx context.Context,server,target string)(net.Co
 
 func (c *Client) openTunnel(ctx context.Context,server,target string)(net.Conn,error){
  mode:=c.TransportMode
- if c.Uplink=="quic-udp" && c.Downlink=="tls-tcp" {
-  conn,e:=c.dialAsymQUIC(ctx,server,target)
-  if e==nil{return conn,nil}
-  if !c.AsymFallback{return nil,e}
-  c.logger().Printf("asymmetric QUIC unavailable: %v",e)
-  mode="auto"
+ if (c.Uplink!="" && c.Uplink!="auto") || (c.Downlink!="" && c.Downlink!="auto") {
+  return nil,errors.New("experimental split QUIC unavailable in stable build")
  }
  if mode==""{mode="auto"}
  grpcFirst:=mode=="grpc"
