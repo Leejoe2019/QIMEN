@@ -59,6 +59,8 @@ func loadConfig(path string) (config, error) {
 	}
 	if cfg.HTTPListen == "" {
 		cfg.HTTPListen = "127.0.0.1:1081"
+	} else if cfg.HTTPListen == "-" {
+		cfg.HTTPListen = ""
 	}
 	if cfg.TransportMode=="" {cfg.TransportMode="auto"}
  if cfg.HelloSplit=="" {cfg.HelloSplit="adaptive"}
